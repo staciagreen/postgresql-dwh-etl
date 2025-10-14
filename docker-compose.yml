@@ -1,0 +1,41 @@
+services:
+  db:
+    image: ${POSTGRES_IMAGE}
+    env_file: .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:${PGDATA}
+      - ./sql:/docker/sql:ro
+      - ./docker/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  seeder:
+    image: python:3.12-slim
+    env_file:
+      - ./docker/seeder/.env.seeder
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./docker/seeder:/app
+    working_dir: /app
+    command: >
+      bash -lc "pip install -r requirements.txt &&
+                python seed.py"
+
+
+  adminer:
+    image: adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

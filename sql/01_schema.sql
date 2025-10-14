@@ -1,8 +1,5 @@
--- 01_schema.sql
--- PostgreSQL. Нужен pgcrypto для gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 1) Покупатели
 CREATE TABLE IF NOT EXISTS customer (
     customer_id   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     customer_name TEXT NOT NULL,
@@ -10,7 +7,6 @@ CREATE TABLE IF NOT EXISTS customer (
     ModifiedDate  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 2) Категории
 CREATE TABLE IF NOT EXISTS category (
     category_id   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     category_name TEXT NOT NULL UNIQUE,
@@ -18,7 +14,6 @@ CREATE TABLE IF NOT EXISTS category (
     ModifiedDate  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 3) Товары
 CREATE TABLE IF NOT EXISTS product (
     product_id   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     product_name TEXT NOT NULL,
@@ -27,7 +22,6 @@ CREATE TABLE IF NOT EXISTS product (
     ModifiedDate TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 3a) Связь M:N Товар–Категория
 CREATE TABLE IF NOT EXISTS product_category (
     product_id   BIGINT NOT NULL,
     category_id  BIGINT NOT NULL,
@@ -36,7 +30,6 @@ CREATE TABLE IF NOT EXISTS product_category (
     CONSTRAINT pk_product_category PRIMARY KEY (product_id, category_id)
 );
 
--- 4) Сделки (шапка)
 CREATE TABLE IF NOT EXISTS sale (
     sale_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     customer_id  BIGINT NOT NULL,
@@ -46,7 +39,6 @@ CREATE TABLE IF NOT EXISTS sale (
     ModifiedDate TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4a) Позиции сделки (детали)
 CREATE TABLE IF NOT EXISTS sale_item (
     sale_item_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     sale_id      BIGINT NOT NULL,

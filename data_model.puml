@@ -1,0 +1,58 @@
+@startuml
+
+entity "Customer" as customer {
+    + customer_id: BIGINT
+    + customer_name: TEXT
+    + rowguid: UUID
+    + ModifiedDate: TIMESTAMPTZ
+}
+
+entity "Category" as category {
+    + category_id: BIGINT
+    + category_name: TEXT
+    + rowguid: UUID
+    + ModifiedDate: TIMESTAMPTZ
+}
+
+entity "Product" as product {
+    + product_id: BIGINT
+    + product_name: TEXT
+    + list_price: NUMERIC(12,2)
+    + rowguid: UUID
+    + ModifiedDate: TIMESTAMPTZ
+}
+
+entity "Product_Category" as product_category {
+    + product_id: BIGINT
+    + category_id: BIGINT
+    + rowguid: UUID
+    + ModifiedDate: TIMESTAMPTZ
+}
+
+entity "Sale" as sale {
+    + sale_id: BIGINT
+    + customer_id: BIGINT
+    + sale_date: DATE
+    + total_amount: NUMERIC(14,2)
+    + rowguid: UUID
+    + ModifiedDate: TIMESTAMPTZ
+}
+
+entity "Sale_Item" as sale_item {
+    + sale_item_id: BIGINT
+    + sale_id: BIGINT
+    + product_id: BIGINT
+    + quantity: NUMERIC(12,3)
+    + unit_price: NUMERIC(12,2)
+    + line_amount: NUMERIC(14,2)
+    + rowguid: UUID
+    + ModifiedDate: TIMESTAMPTZ
+}
+
+customer ||--o| sale : "makes"
+sale ||--o| sale_item : "includes"
+product ||--o| sale_item : "is part of"
+category ||--o| product_category : "contains"
+product ||--o| product_category : "belongs to"
+
+@enduml
