@@ -6,7 +6,7 @@
 <br/>
 
 <h2>Лабораторная работа №1</h2>
-<h3>«Филиалы: схема и наполнение базы данных»</h3>
+<h3>Филиалы: схема и наполнение базы данных</h3>
 
 <br/><br/>
 
@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS sale_item (
 
 ```
 
-- `sql/02_fk.sql` - внешние ключи и индексы
+- `sql/02_fk.sql` - внешние ключи
 
 ```sql
 ALTER TABLE IF EXISTS product_category
@@ -269,5 +269,41 @@ if __name__ == "__main__":
 
 ```bash
 docker compose down -v
-docker compose up --build
+docker compose up -d --build
 ```
+
+## Результат заполнения
+![im](img/branch_west_fill.png)
+
+![im](img/branch_east_fill.png)
+
+## Демонстрация целостности связей 
+```powershell
+docker compose exec -T db psql -U postgres -d branch_west -c "
+INSERT INTO sale(customer_id, sale_date, total_amount) VALUES (999999,'2025-01-01',0);"
+```
+![im](img/целостность.png)
+FK добавлены отдельными ALTER, поэтому нельзя создать продажу на несуществующего клиента.
+
+## Деталь чека - ассоциативная сущность M:N с атрибутами
+``` powershell
+docker compose exec -T db psql -U postgres -d branch_west -c "
+SELECT s.sale_id, to_char(s.sale_date,'YYYY-MM-DD') d, p.product_name,
+       si.quantity, si.unit_price, si.line_amount
+FROM sale_item si
+JOIN sale s    ON s.sale_id = si.sale_id
+JOIN product p ON p.product_id = si.product_id
+ORDER BY s.sale_id, p.product_id
+LIMIT 5;"
+```
+![im](img/sale_detail.png)
+sale_item связывает sale и product + хранит quantity, unit_price, line_amount
+## rowguid и ModifiedDate
+```powershell
+docker compose exec -T db psql -U postgres -d branch_west -c "
+SELECT customer_id, customer_name, rowguid, ModifiedDate
+FROM customer
+ORDER BY customer_id
+LIMIT 3;"
+```
+![im](img/rm.png)
