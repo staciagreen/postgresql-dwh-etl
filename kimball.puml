@@ -1,0 +1,53 @@
+@startuml
+entity "dim_date" as d {
+  + date_sk: BIGINT
+  full_date: DATE
+  year: INT
+  month: INT
+  day: INT
+  week: INT
+  dow: INT
+}
+
+entity "dim_customer" as c {
+  + customer_sk: BIGINT
+  customer_bk: BIGINT
+  customer_name: TEXT
+}
+
+entity "dim_product" as p {
+  + product_sk: BIGINT
+  product_bk: BIGINT
+  product_name: TEXT
+  list_price: NUMERIC(12,2)
+}
+
+entity "dim_category" as cat {
+  + category_sk: BIGINT
+  category_bk: BIGINT
+  category_name: TEXT
+}
+
+entity "bridge_product_category" as bpc {
+  + product_sk: BIGINT
+  + category_sk: BIGINT
+}
+
+entity "fact_sale_item" as f {
+  + fact_sk: BIGINT
+  sale_item_bk: BIGINT
+  sale_bk: BIGINT
+  date_sk: BIGINT
+  customer_sk: BIGINT
+  product_sk: BIGINT
+  quantity: NUMERIC
+  unit_price: NUMERIC(12,2)
+  line_amount: NUMERIC(14,2)
+}
+
+d ||..o{ f
+c ||..o{ f
+p ||..o{ f
+p ||--o{ bpc
+cat ||--o{ bpc
+@enduml
