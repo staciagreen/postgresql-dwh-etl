@@ -1,0 +1,26 @@
+@startuml
+hide circle
+skinparam linetype ortho
+
+entity "dm.dim_week" as w {
+  +week_key : BIGSERIAL
+  iso_year  : INT
+  iso_week  : INT
+  week_start_date : DATE
+  week_end_date   : DATE
+}
+
+entity "dm.fact_week_sales" as f {
+  +week_sales_key      : BIGSERIAL
+  branch_sk            : BIGINT
+  week_key             : BIGINT
+  revenue_total        : NUMERIC
+  items_qty_total      : NUMERIC
+  orders_count         : INT
+  customers_count      : INT
+  avg_check            : NUMERIC
+  avg_items_per_order  : NUMERIC
+}
+
+w ||--o{ f
+@enduml

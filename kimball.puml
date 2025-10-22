@@ -1,53 +1,72 @@
 @startuml
-entity "dim_date" as d {
-  + date_sk: BIGINT
-  full_date: DATE
-  year: INT
-  month: INT
-  day: INT
-  week: INT
-  dow: INT
+hide circle
+skinparam linetype ortho
+
+entity "dwh.dim_branch" as br {
+  +branch_key : SERIAL
+  branch_code : TEXT (UNIQUE)
 }
 
-entity "dim_customer" as c {
-  + customer_sk: BIGINT
-  customer_bk: BIGINT
-  customer_name: TEXT
+entity "dwh.dim_date" as d {
+  +date_key : SERIAL
+  full_date : DATE
+  year : INT
+  month : INT
+  day : INT
 }
 
-entity "dim_product" as p {
-  + product_sk: BIGINT
-  product_bk: BIGINT
-  product_name: TEXT
-  list_price: NUMERIC(12,2)
+entity "dwh.dim_customer" as c {
+  +customer_key : SERIAL
+  branch_key : BIGINT
+  customer_id : BIGINT
+  customer_name : TEXT
 }
 
-entity "dim_category" as cat {
-  + category_sk: BIGINT
-  category_bk: BIGINT
-  category_name: TEXT
+entity "dwh.dim_product" as p {
+  +product_key : SERIAL
+  branch_key : BIGINT
+  product_id : BIGINT
+  product_name : TEXT
+  list_price : NUMERIC(12,2)
 }
 
-entity "bridge_product_category" as bpc {
-  + product_sk: BIGINT
-  + category_sk: BIGINT
+entity "dwh.dim_category" as cat {
+  +category_key : SERIAL
+  branch_key : BIGINT
+  category_id : BIGINT
+  category_name : TEXT
 }
 
-entity "fact_sale_item" as f {
-  + fact_sk: BIGINT
-  sale_item_bk: BIGINT
-  sale_bk: BIGINT
-  date_sk: BIGINT
-  customer_sk: BIGINT
-  product_sk: BIGINT
-  quantity: NUMERIC
-  unit_price: NUMERIC(12,2)
-  line_amount: NUMERIC(14,2)
+entity "dwh.bridge_product_category" as bpc {
+  *product_key  : BIGINT
+  *category_key : BIGINT
 }
 
-d ||..o{ f
-c ||..o{ f
-p ||..o{ f
-p ||--o{ bpc
-cat ||--o{ bpc
+
+' Позиция чека
+entity "dwh.fact_sale_item" as si {
+  +fact_key     : SERIAL
+  +sale_key   : SERIAL
+  sale_key      : BIGINT
+  product_key   : BIGINT
+  sale_item_id  : BIGINT
+  branch_key  : BIGINT
+  date_key    : BIGINT
+  customer_key: BIGINT
+  sale_id     : BIGINT
+  quantity      : NUMERIC(12,3) > 0
+  unit_price    : NUMERIC(12,2) >= 0
+  list_price : NUMERIC(12,2) >= 0
+  line_amount   : NUMERIC(14,2) >= 0
+}
+
+
+p  ||--o{ bpc
+cat||--o{ bpc
+
+br ||--o{ si
+d  ||--o{ si
+c  ||--o{ si
+p  ||--o{ si
+
 @enduml

@@ -1,18 +1,24 @@
-\connect dwh
+-- product_category.product_id -> product.product_id
+ALTER TABLE IF EXISTS product_category
+  ADD CONSTRAINT fk_pc_product
+  FOREIGN KEY (product_id) REFERENCES product(product_id);
 
-ALTER TABLE bridge_product_category
-  ADD CONSTRAINT fk_bpc_product
-  FOREIGN KEY (product_sk) REFERENCES dim_product(product_sk),
+-- product_category.category_id -> category.category_id
+ALTER TABLE IF EXISTS product_category
+  ADD CONSTRAINT fk_pc_category
+  FOREIGN KEY (category_id) REFERENCES category(category_id);
 
-  ADD CONSTRAINT fk_bpc_category
-  FOREIGN KEY (category_sk) REFERENCES dim_category(category_sk);
+-- sale.customer_id -> customer.customer_id
+ALTER TABLE IF EXISTS sale
+  ADD CONSTRAINT fk_sale_customer
+  FOREIGN KEY (customer_id) REFERENCES customer(customer_id);
 
-ALTER TABLE fact_sale_item
-  ADD CONSTRAINT fk_fact_customer
-  FOREIGN KEY (customer_sk) REFERENCES dim_customer(customer_sk),
+-- sale_item.sale_id -> sale.sale_id
+ALTER TABLE IF EXISTS sale_item
+  ADD CONSTRAINT fk_sale_item_sale
+  FOREIGN KEY (sale_id) REFERENCES sale(sale_id);
 
-  ADD CONSTRAINT fk_fact_product
-  FOREIGN KEY (product_sk)   REFERENCES dim_product(product_sk),
-
-  ADD CONSTRAINT fk_fact_date
-  FOREIGN KEY (date_sk)      REFERENCES dim_date(date_sk);
+-- sale_item.product_id -> product.product_id
+ALTER TABLE IF EXISTS sale_item
+  ADD CONSTRAINT fk_sale_item_product
+  FOREIGN KEY (product_id) REFERENCES product(product_id);
