@@ -379,7 +379,7 @@ if __name__ == "__main__":
     main()
 ```
 
-```
+
 ## Развёртывание
 
 ```bash
@@ -388,8 +388,30 @@ docker compose up -d --build
 ```
 
 ## Результат заполнения
+```powershell
+docker compose exec -T db psql -U postgres -d branch_east -c "
+SELECT
+  (SELECT COUNT(*) FROM customer)           AS customers,
+  (SELECT COUNT(*) FROM category)           AS categories,
+  (SELECT COUNT(*) FROM product)            AS products,
+  (SELECT COUNT(*) FROM product_category)   AS product_categories,
+  (SELECT COUNT(*) FROM sale)               AS sales,
+  (SELECT COUNT(*) FROM sale_item)          AS sale_items;
+"
+```
 ![im](img/branch_west_fill.png)
+```powershell
+docker compose exec -T db psql -U postgres -d branch_west -c "
+SELECT
+  (SELECT COUNT(*) FROM customer)           AS customers,
+  (SELECT COUNT(*) FROM category)           AS categories,
+  (SELECT COUNT(*) FROM product)            AS products,
+  (SELECT COUNT(*) FROM product_category)   AS product_categories,
+  (SELECT COUNT(*) FROM sale)               AS sales,
+  (SELECT COUNT(*) FROM sale_item)          AS sale_items;
+"
 
+```
 ![im](img/branch_east_fill.png)
 
 ## Демонстрация целостности связей 

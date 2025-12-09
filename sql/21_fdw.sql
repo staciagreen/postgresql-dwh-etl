@@ -1,4 +1,5 @@
 \connect dwh;
+
 CREATE EXTENSION IF NOT EXISTS postgres_fdw;
 
 DROP SERVER IF EXISTS srv_west CASCADE;
@@ -17,5 +18,6 @@ CREATE SCHEMA IF NOT EXISTS src_east;
 
 IMPORT FOREIGN SCHEMA public LIMIT TO (customer, product, category, product_category, sale, sale_item)
   FROM SERVER srv_west INTO src_west;
+
 IMPORT FOREIGN SCHEMA public LIMIT TO (customer, product, category, product_category, sale, sale_item)
   FROM SERVER srv_east INTO src_east;

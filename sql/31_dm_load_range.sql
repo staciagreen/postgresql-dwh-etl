@@ -5,7 +5,6 @@ CREATE OR REPLACE PROCEDURE dm.load_week_sales_range(
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    -- 1. Удаляем недели и факты за выбранный период
     DELETE FROM dm.fact_week_sales f
     USING dm.dim_week w
     WHERE f.week_key = w.week_key
@@ -16,7 +15,6 @@ BEGIN
     WHERE week_start_date >= p_start_date
       AND week_end_date   <= p_end_date;
 
-    -- 2. Создаём недели заново (только в диапазоне)
     WITH base AS (
         SELECT gs::date AS full_date,
                EXTRACT(ISOYEAR FROM gs)::int AS iso_year,
@@ -39,7 +37,6 @@ BEGIN
     ORDER BY iso_year, iso_week
     ON CONFLICT (iso_year, iso_week) DO NOTHING;
 
-    -- 3. Наполняем факты за выбранный диапазон
     INSERT INTO dm.fact_week_sales(
         branch_key, week_key,
         revenue_total, items_qty_total, orders_count, customers_count,
@@ -48,18 +45,18 @@ BEGIN
     SELECT
         f.branch_key,
         w.week_key,
-        SUM(f.line_amount)::numeric(16,2)  AS revenue_total,
-        SUM(f.quantity)::numeric(16,3)     AS items_qty_total,
-        COUNT(DISTINCT f.sale_id)          AS orders_count,
-        COUNT(DISTINCT f.customer_key)     AS customers_count,
+        SUM(f.line_amount)::numeric(16,2),
+        SUM(f.quantity)::numeric(16,3),
+        COUNT(DISTINCT f.sale_id),
+        COUNT(DISTINCT f.customer_key),
         CASE WHEN COUNT(DISTINCT f.sale_id)=0
-             THEN 0::numeric(16,2)
+             THEN 0
              ELSE (SUM(f.line_amount) / COUNT(DISTINCT f.sale_id))::numeric(16,2)
-        END AS avg_check,
+        END,
         CASE WHEN COUNT(DISTINCT f.sale_id)=0
-             THEN 0::numeric(16,3)
+             THEN 0
              ELSE (SUM(f.quantity) / COUNT(DISTINCT f.sale_id))::numeric(16,3)
-        END AS avg_items_per_order
+        END
     FROM dwh.fact_sale_item f
     JOIN dwh.dim_date d ON d.date_key = f.date_key
     JOIN dm.dim_week w
@@ -68,5 +65,6 @@ BEGIN
     WHERE d.full_date BETWEEN p_start_date AND p_end_date
     GROUP BY f.branch_key, w.week_key
     ORDER BY w.week_key, f.branch_key;
+
 END;
 $$;

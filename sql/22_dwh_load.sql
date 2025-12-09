@@ -1,15 +1,4 @@
 BEGIN;
-
-TRUNCATE
-  dwh.fact_sale_item,
-  dwh.bridge_product_category,
-  dwh.dim_product,
-  dwh.dim_category,
-  dwh.dim_customer,
-  dwh.dim_date,
-  dwh.dim_branch
-RESTART IDENTITY CASCADE;
-
 INSERT INTO dwh.dim_branch(branch_code) VALUES ('west'), ('east');
 
 WITH bounds AS (
@@ -19,13 +8,11 @@ WITH bounds AS (
     GREATEST( (SELECT MAX(sale_date) FROM src_west.sale),
               (SELECT MAX(sale_date) FROM src_east.sale) ) AS dmax
 )
-INSERT INTO dwh.dim_date(full_date, year, month, day, week, isodow)
+INSERT INTO dwh.dim_date(full_date, year, month, day)
 SELECT d::date,
        EXTRACT(YEAR FROM d)::int,
        EXTRACT(MONTH FROM d)::int,
-       EXTRACT(DAY FROM d)::int,
-       EXTRACT(WEEK FROM d)::int,
-       EXTRACT(ISODOW FROM d)::int
+       EXTRACT(DAY FROM d)::int
 FROM bounds b
 CROSS JOIN generate_series(b.dmin, b.dmax, interval '1 day') AS g(d)
 ORDER BY 1;
@@ -73,22 +60,19 @@ ON CONFLICT DO NOTHING;
 
 INSERT INTO dwh.fact_sale_item(
   branch_key, date_key, customer_key, product_key,
-  sale_id, sale_item_id, quantity, unit_price, line_amount
+  sale_id, sale_item_id, quantity, unit_price, line_amount, list_price
 )
-
 SELECT br.branch_key, dd.date_key, dc.customer_key, dp.product_key,
-       s.sale_id, si.sale_item_id, si.quantity, si.unit_price, si.line_amount
+       s.sale_id, si.sale_item_id, si.quantity, si.unit_price, si.line_amount, dp.list_price
 FROM src_west.sale_item si
 JOIN src_west.sale s   ON s.sale_id = si.sale_id
 JOIN dwh.dim_branch br ON br.branch_code = 'west'
 JOIN dwh.dim_date   dd ON dd.full_date = s.sale_date
 JOIN dwh.dim_customer dc ON dc.branch_key = br.branch_key AND dc.customer_id = s.customer_id
 JOIN dwh.dim_product  dp ON dp.branch_key = br.branch_key AND dp.product_id = si.product_id
-
 UNION ALL
-
 SELECT br.branch_key, dd.date_key, dc.customer_key, dp.product_key,
-       s.sale_id, si.sale_item_id, si.quantity, si.unit_price, si.line_amount
+       s.sale_id, si.sale_item_id, si.quantity, si.unit_price, si.line_amount, dp.list_price   -- ← добавили
 FROM src_east.sale_item si
 JOIN src_east.sale s   ON s.sale_id = si.sale_id
 JOIN dwh.dim_branch br ON br.branch_code = 'east'

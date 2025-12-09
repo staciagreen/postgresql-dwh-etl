@@ -52,25 +52,24 @@ __**********<div align="center">
 
 Выбрана **звезда (Кимбалл)** в духе базового учебного примера: один факт и набор плоских измерений с суррогатными ключами. Причины:
 - простота схемы и воспроизводимости (понятная защита);
-- быстрые аналитические запросы (джойним факт с измерениями по *_sk);
-- независимость DWH от внутренних идентификаторов источников (идём через собственные *_sk);
+- быстрые аналитические запросы (джойним факт с измерениями по *_key);
+- независимость DWH от внутренних идентификаторов источников (идём через собственные *_key);
 
 ## 3. Модель DWH (логика и таблицы)
 ![Схема](img/kimball.png)
 **Факт:** `dwh.fact_sale_item`  - позиции продаж.  
 **Измерения:**  
 - dwh.dim_branch  - код филиала (branch_code = 'west'|'east');  
-- dwh.dim_date  - календарь (full_date, year, month, day, week, isodow);  
-- dwh.dim_customer  - покупатели (branch_sk, customer_id, customer_name);  
-- dwh.dim_product  - товары (branch_sk, product_id, product_name, list_price);  
-- dwh.dim_category  - категории (branch_sk, category_id, category_name);  
+- dwh.dim_date  - календарь (full_date, year, month, day);  
+- dwh.dim_customer  - покупатели (branch_key, customer_id, customer_name);  
+- dwh.dim_product  - товары (branch_key, product_id, product_name, list_price);  
+- dwh.dim_category  - категории (branch_key, category_id, category_name);  
 **Мост:** dwh.bridge_product_category  - связь товар<->категория (M:N).
 
 **Ключи и ссылки:**
-- Во всех таблицах применяются **суррогатные ключи** *_sk ( SERIAL).  
-- Для избежания коллизий одинаковых *_id из разных филиалов, в измерениях присутствует **branch_sk**.  
-- Во факте хранится sale_id и sale_item_id как атрибуты строки факта (идентификаторы позиции в источнике).  
-- Загрузка  - **полная перезаливка**: на каждом прогоне очищаем факт/мост/измерения и заново заполняем из src_west/* и src_east/*.
+- Во всех таблицах применяются **суррогатные ключи** *_key ( SERIAL).  
+- Для избежания коллизий одинаковых *_id из разных филиалов, в измерениях присутствует **branch_key**.  
+- Во факте хранится sale_id и sale_item_id как атрибуты строки факта (идентификаторы позиции в источнике).
 
 ## 4. Скрипты ЛР‑2 (перечень и места для вставки содержимого)
 
@@ -79,69 +78,58 @@ __**********<div align="center">
 CREATE SCHEMA IF NOT EXISTS dwh;
 
 CREATE TABLE IF NOT EXISTS dwh.dim_branch (
-  branch_sk   SERIAL PRIMARY KEY,
+  branch_key   SERIAL PRIMARY KEY,
   branch_code TEXT NOT NULL UNIQUE
 );
 
 CREATE TABLE IF NOT EXISTS dwh.dim_date (
-  date_sk   SERIAL PRIMARY KEY,
+  date_key   SERIAL PRIMARY KEY,
   full_date DATE NOT NULL UNIQUE,
   year      INT  NOT NULL,
   month     INT  NOT NULL,
-  day       INT  NOT NULL,
+  day       INT  NOT NULL
 );
+
 CREATE INDEX IF NOT EXISTS ix_dim_date_full_date ON dwh.dim_date(full_date);
 
 CREATE TABLE IF NOT EXISTS dwh.dim_customer (
-  customer_sk    SERIAL PRIMARY KEY,
-  branch_sk     BIGINT NOT NULL REFERENCES dwh.dim_branch(branch_sk),
+  customer_key    SERIAL PRIMARY KEY,
+  branch_key     BIGINT NOT NULL REFERENCES dwh.dim_branch(branch_key),
   customer_id    BIGINT NOT NULL,
   customer_name  TEXT   NOT NULL
 );
-CREATE INDEX IF NOT EXISTS ix_customer_src ON dwh.dim_customer(branch_sk, customer_id);
+CREATE INDEX IF NOT EXISTS ix_customer_src ON dwh.dim_customer(branch_key, customer_id);
 
 CREATE TABLE IF NOT EXISTS dwh.dim_product (
-  product_sk    SERIAL PRIMARY KEY,
-  branch_sk    BIGINT NOT NULL REFERENCES dwh.dim_branch(branch_sk),
+  product_key    SERIAL PRIMARY KEY,
+  branch_key    BIGINT NOT NULL REFERENCES dwh.dim_branch(branch_key),
   product_id    BIGINT NOT NULL,
   product_name  TEXT   NOT NULL,
   list_price    NUMERIC(12,2) NOT NULL CHECK (list_price >= 0)
 );
-CREATE INDEX IF NOT EXISTS ix_product_src ON dwh.dim_product(branch_sk, product_id);
+CREATE INDEX IF NOT EXISTS ix_product_src ON dwh.dim_product(branch_key, product_id);
 
 CREATE TABLE IF NOT EXISTS dwh.dim_category (
-  category_sk    SERIAL PRIMARY KEY,
-  branch_sk     BIGINT NOT NULL REFERENCES dwh.dim_branch(branch_sk),
+  category_key    SERIAL PRIMARY KEY,
+  branch_key     BIGINT NOT NULL REFERENCES dwh.dim_branch(branch_key),
   category_id    BIGINT NOT NULL,
   category_name  TEXT   NOT NULL
 );
-CREATE INDEX IF NOT EXISTS ix_category_src ON dwh.dim_category(branch_sk, category_id);
+CREATE INDEX IF NOT EXISTS ix_category_src ON dwh.dim_category(branch_key, category_id);
 
 
 CREATE TABLE IF NOT EXISTS dwh.bridge_product_category (
-  product_sk  BIGINT NOT NULL REFERENCES dwh.dim_product(product_sk) ON DELETE CASCADE,
-  category_sk BIGINT NOT NULL REFERENCES dwh.dim_category(category_sk) ON DELETE CASCADE,
-  PRIMARY KEY (product_sk, category_sk)
+  product_key  BIGINT NOT NULL REFERENCES dwh.dim_product(product_key) ON DELETE CASCADE,
+  category_key BIGINT NOT NULL REFERENCES dwh.dim_category(category_key) ON DELETE CASCADE,
+  PRIMARY KEY (product_key, category_key)
 );
 
 CREATE TABLE IF NOT EXISTS dwh.fact_sale_item (
-  fact_sk       SERIAL PRIMARY KEY,
-  branch_sk    BIGINT NOT NULL REFERENCES dwh.dim_branch(branch_sk),
-  date_sk      BIGINT NOT NULL REFERENCES dwh.dim_date(date_sk),
-  customer_sk  BIGINT NOT NULL REFERENCES dwh.dim_customer(customer_sk),
-  product_sk   BIGINT NOT NULL REFERENCES dwh.dim_product(product_sk),
-  sale_id       BIGINT NOT NULL,
-  sale_item_id  BIGINT NOT NULL,
-  quantity      NUMERIC(12,3) NOT NULL CHECK (quantity > 0),
-  unit_price    NUMERIC(12,2) NOT NULL CHECK (unit_price >= 0),
-  line_amount   NUMERIC(14,2) NOT NULL CHECK (line_amount >= 0)
-);
-CREATE TABLE IF NOT EXISTS dwh.fact_sale_item (
-  fact_sk       SERIAL PRIMARY KEY,
-  branch_sk     BIGINT NOT NULL REFERENCES dwh.dim_branch(branch_sk),
-  date_sk       BIGINT NOT NULL REFERENCES dwh.dim_date(date_sk),
-  customer_sk   BIGINT NOT NULL REFERENCES dwh.dim_customer(customer_sk),
-  product_sk    BIGINT NOT NULL REFERENCES dwh.dim_product(product_sk),
+  fact_key       SERIAL PRIMARY KEY,
+  branch_key     BIGINT NOT NULL REFERENCES dwh.dim_branch(branch_key),
+  date_key       BIGINT NOT NULL REFERENCES dwh.dim_date(date_key),
+  customer_key   BIGINT NOT NULL REFERENCES dwh.dim_customer(customer_key),
+  product_key    BIGINT NOT NULL REFERENCES dwh.dim_product(product_key),
 
   sale_id       BIGINT NOT NULL,
   sale_item_id  BIGINT NOT NULL,
@@ -152,9 +140,8 @@ CREATE TABLE IF NOT EXISTS dwh.fact_sale_item (
   list_price    NUMERIC(12,2) NOT NULL CHECK (list_price >= 0),
   line_amount   NUMERIC(14,2) NOT NULL CHECK (line_amount >= 0),
 
-  CONSTRAINT uq_fact_sale_item_nat UNIQUE (branch_sk, sale_id, sale_item_id)
+  CONSTRAINT uq_fact_sale_item_nat UNIQUE (branch_key, sale_id, sale_item_id)
 );
-
 ```
 
 ### 4.2. `21_fdw.sql`  - настройка FDW (импорт src_west/* и src_east/* в БД dwh)
@@ -182,7 +169,6 @@ IMPORT FOREIGN SCHEMA public LIMIT TO (customer, product, category, product_cate
 
 IMPORT FOREIGN SCHEMA public LIMIT TO (customer, product, category, product_category, sale, sale_item)
   FROM SERVER srv_east INTO src_east;
-
 ```
 
 ### 4.3. `22_dwh_load.sql`  - полная перезагрузка DWH из филиалов
@@ -197,85 +183,79 @@ WITH bounds AS (
     GREATEST( (SELECT MAX(sale_date) FROM src_west.sale),
               (SELECT MAX(sale_date) FROM src_east.sale) ) AS dmax
 )
-INSERT INTO dwh.dim_date(full_date, year, month, day, week, isodow)
+INSERT INTO dwh.dim_date(full_date, year, month, day)
 SELECT d::date,
        EXTRACT(YEAR FROM d)::int,
        EXTRACT(MONTH FROM d)::int,
-       EXTRACT(DAY FROM d)::int,
-       EXTRACT(WEEK FROM d)::int,
-       EXTRACT(ISODOW FROM d)::int
+       EXTRACT(DAY FROM d)::int
 FROM bounds b
 CROSS JOIN generate_series(b.dmin, b.dmax, interval '1 day') AS g(d)
 ORDER BY 1;
 
-INSERT INTO dwh.dim_customer(branch_sk, customer_id, customer_name)
-SELECT br.branch_sk, c.customer_id, c.customer_name
+INSERT INTO dwh.dim_customer(branch_key, customer_id, customer_name)
+SELECT br.branch_key, c.customer_id, c.customer_name
 FROM src_west.customer c
 JOIN dwh.dim_branch br ON br.branch_code='west'
 UNION ALL
-SELECT br.branch_sk, c.customer_id, c.customer_name
+SELECT br.branch_key, c.customer_id, c.customer_name
 FROM src_east.customer c
 JOIN dwh.dim_branch br ON br.branch_code='east';
 
-INSERT INTO dwh.dim_product(branch_sk, product_id, product_name, list_price)
-SELECT br.branch_sk, p.product_id, p.product_name, p.list_price
+INSERT INTO dwh.dim_product(branch_key, product_id, product_name, list_price)
+SELECT br.branch_key, p.product_id, p.product_name, p.list_price
 FROM src_west.product p
 JOIN dwh.dim_branch br ON br.branch_code='west'
 UNION ALL
-SELECT br.branch_sk, p.product_id, p.product_name, p.list_price
+SELECT br.branch_key, p.product_id, p.product_name, p.list_price
 FROM src_east.product p
 JOIN dwh.dim_branch br ON br.branch_code='east';
 
-INSERT INTO dwh.dim_category(branch_sk, category_id, category_name)
-SELECT br.branch_sk, c.category_id, c.category_name
+INSERT INTO dwh.dim_category(branch_key, category_id, category_name)
+SELECT br.branch_key, c.category_id, c.category_name
 FROM src_west.category c
 JOIN dwh.dim_branch br ON br.branch_code='west'
 UNION ALL
-SELECT br.branch_sk, c.category_id, c.category_name
+SELECT br.branch_key, c.category_id, c.category_name
 FROM src_east.category c
 JOIN dwh.dim_branch br ON br.branch_code='east';
 
-INSERT INTO dwh.bridge_product_category(product_sk, category_sk)
-SELECT dp.product_sk, dc.category_sk
+INSERT INTO dwh.bridge_product_category(product_key, category_key)
+SELECT dp.product_key, dc.category_key
 FROM src_west.product_category pc
 JOIN dwh.dim_branch br ON br.branch_code='west'
-JOIN dwh.dim_product  dp ON dp.branch_sk = br.branch_sk AND dp.product_id = pc.product_id
-JOIN dwh.dim_category dc ON dc.branch_sk = br.branch_sk AND dc.category_id = pc.category_id
+JOIN dwh.dim_product  dp ON dp.branch_key = br.branch_key AND dp.product_id = pc.product_id
+JOIN dwh.dim_category dc ON dc.branch_key = br.branch_key AND dc.category_id = pc.category_id
 UNION ALL
-SELECT dp.product_sk, dc.category_sk
+SELECT dp.product_key, dc.category_key
 FROM src_east.product_category pc
 JOIN dwh.dim_branch br ON br.branch_code='east'
-JOIN dwh.dim_product  dp ON dp.branch_sk = br.branch_sk AND dp.product_id = pc.product_id
-JOIN dwh.dim_category dc ON dc.branch_sk = br.branch_sk AND dc.category_id = pc.category_id
+JOIN dwh.dim_product  dp ON dp.branch_key = br.branch_key AND dp.product_id = pc.product_id
+JOIN dwh.dim_category dc ON dc.branch_key = br.branch_key AND dc.category_id = pc.category_id
 ON CONFLICT DO NOTHING;
 
 INSERT INTO dwh.fact_sale_item(
-  branch_sk, date_sk, customer_sk, product_sk,
-  sale_id, sale_item_id, quantity, unit_price, line_amount
+  branch_key, date_key, customer_key, product_key,
+  sale_id, sale_item_id, quantity, unit_price, line_amount, list_price
 )
-
-SELECT br.branch_sk, dd.date_sk, dc.customer_sk, dp.product_sk,
-       s.sale_id, si.sale_item_id, si.quantity, si.unit_price, si.line_amount
+SELECT br.branch_key, dd.date_key, dc.customer_key, dp.product_key,
+       s.sale_id, si.sale_item_id, si.quantity, si.unit_price, si.line_amount, dp.list_price
 FROM src_west.sale_item si
 JOIN src_west.sale s   ON s.sale_id = si.sale_id
 JOIN dwh.dim_branch br ON br.branch_code = 'west'
 JOIN dwh.dim_date   dd ON dd.full_date = s.sale_date
-JOIN dwh.dim_customer dc ON dc.branch_sk = br.branch_sk AND dc.customer_id = s.customer_id
-JOIN dwh.dim_product  dp ON dp.branch_sk = br.branch_sk AND dp.product_id = si.product_id
-
+JOIN dwh.dim_customer dc ON dc.branch_key = br.branch_key AND dc.customer_id = s.customer_id
+JOIN dwh.dim_product  dp ON dp.branch_key = br.branch_key AND dp.product_id = si.product_id
 UNION ALL
-
-SELECT br.branch_sk, dd.date_sk, dc.customer_sk, dp.product_sk,
-       s.sale_id, si.sale_item_id, si.quantity, si.unit_price, si.line_amount
+SELECT br.branch_key, dd.date_key, dc.customer_key, dp.product_key,
+       s.sale_id, si.sale_item_id, si.quantity, si.unit_price, si.line_amount, dp.list_price   -- ← добавили
 FROM src_east.sale_item si
 JOIN src_east.sale s   ON s.sale_id = si.sale_id
 JOIN dwh.dim_branch br ON br.branch_code = 'east'
 JOIN dwh.dim_date   dd ON dd.full_date = s.sale_date
-JOIN dwh.dim_customer dc ON dc.branch_sk = br.branch_sk AND dc.customer_id = s.customer_id
-JOIN dwh.dim_product  dp ON dp.branch_sk = br.branch_sk AND dp.product_id = si.product_id;
+JOIN dwh.dim_customer dc ON dc.branch_key = br.branch_key AND dc.customer_id = s.customer_id
+JOIN dwh.dim_product  dp ON dp.branch_key = br.branch_key AND dp.product_id = si.product_id;
 
 COMMIT;
-
 ```
 
 ## 5. Как поднять
@@ -293,11 +273,6 @@ docker compose exec -T db psql -U postgres -d dwh -c "SELECT foreign_table_schem
    FROM information_schema.foreign_tables
   WHERE foreign_table_schema IN ('src_west','src_east')
   ORDER BY 1,2;"
-  
-  # через FDW из dwh
-docker compose exec -T db psql -U postgres -d dwh -c "SELECT 'west' src, COUNT(*) FROM src_west.sale
- UNION ALL
- SELECT 'east', COUNT(*) FROM src_east.sale;"
 
 ```
 ![Схема](img/5.1.png)
@@ -328,10 +303,10 @@ UNION ALL SELECT 'fact_sale_item', COUNT(*) FROM dwh.fact_sale_item;"
 ```powershell
 docker compose exec -T db psql -U postgres -d dwh -c "
 SELECT COUNT(*) AS broken_dates
-FROM dwh.fact_sale_item f LEFT JOIN dwh.dim_date d ON d.date_sk = f.date_sk
-WHERE d.date_sk IS NULL;"
+FROM dwh.fact_sale_item f LEFT JOIN dwh.dim_date d ON d.date_key = f.date_key
+WHERE d.date_key IS NULL;"
 ```
-![Схема](img/6.2.png)
+![Схема](img/2.6.2.png)
 
 ### 6.3. Сверка сумм: DWH vs источники (через FDW)
 ```powershell
@@ -348,19 +323,4 @@ FROM (
   SELECT line_amount FROM src_east.sale_item
 ) t;"
 ```
-
-## 7. Пояснения к скриптам
-
-### 7.1. `20_dwh_schema.sql`
-- создаёт схему `dwh` и таблицы измерений (`dim_branch`, `dim_date`, `dim_customer`, `dim_product`, `dim_category`), мост `bridge_product_category` и факт `fact_sale_item`;  
-- применяются **суррогатные ключи** `*_sk`, в измерениях присутствует `branch_sk` для отделения одинаковых `*_id` разных филиалов;  
-- добавлены индексы для ускорения загрузки и аналитических запросов.
-
-### 7.2. `21_fdw.sql`
-- включает расширение `postgres_fdw`, объявляет сервера `srv_west` и `srv_east` и импортирует таблицы `public.*` из БД `branch_west` и `branch_east` в схемы `src_west` и `src_east` внутри БД `dwh`;  
-- в init‑сценарии возможно использование Unix‑сокета (`host '/var/run/postgresql'`)  - это устраняет проблемы старта «через TCP» на ранней фазе контейнера.
-
-### 7.3. `22_dwh_load.sql`
-- строит календарь по диапазону дат продаж из обеих веток (`MIN/MAX` в `src_west.sale` и `src_east.sale`);  
-- заполняет измерения, мост и факт простыми `INSERT ... SELECT` из `src_*`;  
-- каждый повторный прогон даёт **полностью воспроизводимый** результат (полная перезагрузка).**********__
+![Схема](img/2.6.3.png)

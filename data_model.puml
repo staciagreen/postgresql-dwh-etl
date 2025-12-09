@@ -45,6 +45,7 @@ entity "Sale_Item" as sale_item {
     + quantity: NUMERIC(12,3)
     + unit_price: NUMERIC(12,2)
     + line_amount: NUMERIC(14,2)
+    + list_price : NUMERIC(12,2)
     + rowguid: UUID
     + ModifiedDate: TIMESTAMPTZ
 }

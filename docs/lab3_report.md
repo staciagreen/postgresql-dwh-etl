@@ -152,17 +152,17 @@ FROM weeks
 ORDER BY iso_year, iso_week;
 
 INSERT INTO dm.fact_week_sales(
-  branch_sk, week_key,
+  branch_key, week_key,
   revenue_total, items_qty_total, orders_count, customers_count,
   avg_check, avg_items_per_order
 )
 SELECT
-  f.branch_sk,
+  f.branch_key,
   w.week_key,
   SUM(f.line_amount)::numeric(16,2)          AS revenue_total,
   SUM(f.quantity)::numeric(16,3)             AS items_qty_total,
   COUNT(DISTINCT f.sale_id)                  AS orders_count,
-  COUNT(DISTINCT f.customer_sk)              AS customers_count,
+  COUNT(DISTINCT f.customer_key)              AS customers_count,
   CASE WHEN COUNT(DISTINCT f.sale_id)=0
        THEN 0::numeric(16,2)
        ELSE (SUM(f.line_amount) / COUNT(DISTINCT f.sale_id))::numeric(16,2)
@@ -173,12 +173,12 @@ SELECT
   END                                        AS avg_items_per_order
 FROM dwh.fact_sale_item f
 JOIN dwh.dim_date d
-  ON d.date_sk = f.date_sk
+  ON d.date_key = f.date_key
 JOIN dm.dim_week w
   ON w.iso_year = EXTRACT(ISOYEAR FROM d.full_date)::int
  AND w.iso_week = EXTRACT(WEEK    FROM d.full_date)::int
-GROUP BY f.branch_sk, w.week_key
-ORDER BY w.week_key, f.branch_sk;
+GROUP BY f.branch_key, w.week_key
+ORDER BY w.week_key, f.branch_key;
 
 COMMIT;
 ```
@@ -186,16 +186,12 @@ COMMIT;
 ## 7. Порядок запуска
 
 ```bash
-# 1) Схема DWH (если не создана)
-docker compose exec -T db psql -U postgres -d dwh -f /docker/sql/20_dwh_schema.sql
+docker compose down -v
+docker compose up -d --build
+sleep 15
+docker compose exec -T db psql -U postgres -d dwh -f /docker/sql/22_dwh_load.sql 
 
-# 2) Подключение источников (FDW)
-docker compose exec -T db psql -U postgres -d dwh -f /docker/sql/21_fdw.sql
-
-# 3) Полная загрузка DWH
-docker compose exec -T db psql -U postgres -d dwh -f /docker/sql/22_dwh_load.sql
-
-# 4) Витрина: схема и загрузка
+# Витрина: схема и загрузка
 docker compose exec -T db psql -U postgres -d dwh -f /docker/sql/30_dm_schema.sql
 docker compose exec -T db psql -U postgres -d dwh -f /docker/sql/31_dm_load.sql
 ```
@@ -203,57 +199,40 @@ docker compose exec -T db psql -U postgres -d dwh -f /docker/sql/31_dm_load.sql
 ## 8. Проверка корректности
 
 ### 8.1. Сверка сумм DM vs DWH
-```sql
+```powershell
+docker compose exec -T db psql -U postgres -d dwh -c "
 SELECT
   (SELECT COALESCE(SUM(line_amount),0) FROM dwh.fact_sale_item)   AS dwh_sum,
-  (SELECT COALESCE(SUM(revenue_total),0) FROM dm.fact_week_sales) AS dm_sum;
+  (SELECT COALESCE(SUM(revenue_total),0) FROM dm.fact_week_sales) AS dm_sum;"
 ```
-
+![Схема](img/8.1.png)
 ### 8.2. Контроль связности и объёма
-```sql
+```powershell
 -- Наличие недель и строк факта
+docker compose exec -T db psql -U postgres -d dwh -c " 
 SELECT COUNT(*) AS weeks_cnt FROM dm.dim_week;
-SELECT COUNT(*) AS rows_cnt  FROM dm.fact_week_sales;
-
+SELECT COUNT(*) AS rows_cnt  FROM dm.fact_week_sales;"
+```
+![Схема](img/8.2.png)
+```powershell
 -- Отсутствие "осиротевших" ссылок на неделю
+docker compose exec -T db psql -U postgres -d dwh -c " 
 SELECT COUNT(*) AS orphans
 FROM dm.fact_week_sales f
 LEFT JOIN dm.dim_week w ON w.week_key = f.week_key
-WHERE w.week_key IS NULL;
+WHERE w.week_key IS NULL;"
 ```
+![Схема](img/8.2.2.png)
+## 9. Примерный аналитический запрос
 
-## 9. Примерные аналитические запросы
-
-```sql
+```powershell
 -- ТОП‑10 недель по выручке (все филиалы)
+docker compose exec -T db psql -U postgres -d dwh -c " 
 SELECT w.iso_year, w.iso_week, SUM(f.revenue_total) AS revenue
 FROM dm.fact_week_sales f
 JOIN dm.dim_week w ON w.week_key = f.week_key
 GROUP BY w.iso_year, w.iso_week
 ORDER BY revenue DESC
-LIMIT 10;
-
--- Динамика выручки по конкретному филиалу (последние 8 недель)
-SELECT to_char(w.week_start_date, '\"W\"IW YYYY') AS week_label, SUM(f.revenue_total) AS revenue
-FROM dm.fact_week_sales f
-JOIN dm.dim_week w ON w.week_key = f.week_key
-JOIN dwh.dim_branch b ON b.branch_key = f.branch_key
-WHERE b.branch_code = 'EAST'
-GROUP BY week_label, w.week_start_date
-ORDER BY w.week_start_date DESC
-LIMIT 8;
-
--- Средний чек по филиалам
-SELECT b.branch_code,
-       ROUND(SUM(f.revenue_total)/NULLIF(SUM(f.orders_count),0), 2) AS avg_check
-FROM dm.fact_week_sales f
-JOIN dwh.dim_branch b ON b.branch_key = f.branch_key
-GROUP BY b.branch_code
-ORDER BY avg_check DESC;
+LIMIT 10;"
 ```
-
-## 10. Результаты и наблюдения
-
-- Витрина успешно построена: заполнены dm.dim_week и dm.fact_week_sales; суммы по витрине совпадают с суммой по факту DWH.  
-- Нулевая агрегация устраняется корректным порядком выполнения: сначала загрузка DWH (22_dwh_load.sql), затем сборка витрины.  
-- Средние показатели (avg_check, avg_items_per_order) считаются над уже агрегированными метриками и пригодны для BI‑визуализаций.
+![Схема](img/9.1.png)

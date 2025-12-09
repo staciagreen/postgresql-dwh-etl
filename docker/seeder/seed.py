@@ -83,21 +83,6 @@ def seed_db(dbname):
             "INSERT INTO product_category(product_id, category_id) VALUES (%s, %s) ON CONFLICT DO NOTHING;",
             (p, c)
         )
-    # Гарантия: у каждого товара есть хотя бы одна категория
-    cur.execute("SELECT product_id FROM product")
-    all_products = [r[0] for r in cur.fetchall()]
-
-    cur.execute("SELECT DISTINCT product_id FROM product_category")
-    covered = {r[0] for r in cur.fetchall()}
-
-    missing = [p for p in all_products if p not in covered]
-    for p in missing:
-        cur.execute("SELECT category_id FROM category ORDER BY random() LIMIT 1")
-        c = cur.fetchone()[0]
-        cur.execute(
-            "INSERT INTO product_category(product_id, category_id) VALUES (%s, %s) ON CONFLICT DO NOTHING;",
-            (p, c)
-        )
 
     # Вставка шапок продаж (sale) с нулевой суммой, которую пересчитаем ниже
     sales = []
