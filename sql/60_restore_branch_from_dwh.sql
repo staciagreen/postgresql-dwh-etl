@@ -85,15 +85,16 @@ BEGIN
         RAISE NOTICE 'p_force=true: skipping emptiness checks for target tables';
     END IF;
 
-    -- Use temporary mapping tables in DWH to map source natural ids to new target ids
-    CREATE TEMP TABLE IF NOT EXISTS tmp_customer_map(orig_customer_id BIGINT, new_customer_id BIGINT) ON COMMIT DROP;
-    CREATE TEMP TABLE IF NOT EXISTS tmp_product_map(orig_product_id BIGINT, new_product_id BIGINT) ON COMMIT DROP;
-    CREATE TEMP TABLE IF NOT EXISTS tmp_category_map(orig_category_id BIGINT, new_category_id BIGINT) ON COMMIT DROP;
+    -- Use temporary mapping tables in DWH to map source natural ids/keys to new target ids
+    -- store both source_key and source_id to avoid NULL/lookup problems; match later by id OR key
+    CREATE TEMP TABLE IF NOT EXISTS tmp_customer_map(orig_customer_key BIGINT, orig_customer_id BIGINT, new_customer_id BIGINT) ON COMMIT DROP;
+    CREATE TEMP TABLE IF NOT EXISTS tmp_product_map(orig_product_key BIGINT, orig_product_id BIGINT, new_product_id BIGINT) ON COMMIT DROP;
+    CREATE TEMP TABLE IF NOT EXISTS tmp_category_map(orig_category_key BIGINT, orig_category_id BIGINT, new_category_id BIGINT) ON COMMIT DROP;
     CREATE TEMP TABLE IF NOT EXISTS tmp_sale_map(orig_sale_id BIGINT, new_sale_id BIGINT) ON COMMIT DROP;
 
-    -- Insert customers into target (let branch generate customer_id)
+    -- Insert customers (map by customer_key and preserve source ids when available)
     FOR rec IN
-      SELECT DISTINCT dc.customer_id, dc.customer_name
+      SELECT DISTINCT dc.customer_key, dc.customer_id, dc.customer_name
       FROM dwh.dim_customer dc
       JOIN dwh.fact_sale_item f ON f.customer_key = dc.customer_key
       JOIN dwh.dim_date dd ON f.date_key = dd.date_key
@@ -101,26 +102,74 @@ BEGIN
         AND dd.full_date BETWEEN p_start_date AND p_end_date
     LOOP
         v_new_id := NULL;
-        -- try to find by natural key (name)
+        -- Try to insert with explicit customer_id from source
         BEGIN
-            EXECUTE format('SELECT customer_id FROM %I.customer WHERE customer_name = $1 LIMIT 1', v_target_schema)
-            USING rec.customer_name INTO v_new_id;
+            EXECUTE format(
+              'INSERT INTO %I.customer (customer_id, customer_name, rowguid, modifieddate) VALUES ($1,$2,$3,$4) RETURNING customer_id',
+              v_target_schema
+            )
+            USING rec.customer_id, rec.customer_name, gen_random_uuid(), NOW()
+            INTO v_new_id;
+            v_customers := v_customers + 1;
         EXCEPTION WHEN OTHERS THEN
-            v_new_id := NULL;
+            -- If explicit ID fails, try without it (let database generate)
+            BEGIN
+                EXECUTE format(
+                  'INSERT INTO %I.customer (customer_name, rowguid, modifieddate) VALUES ($1,$2,$3) RETURNING customer_id',
+                  v_target_schema
+                )
+                USING rec.customer_name, gen_random_uuid(), NOW()
+                INTO v_new_id;
+                v_customers := v_customers + 1;
+            EXCEPTION WHEN OTHERS THEN
+                RAISE NOTICE 'Customer insert into % failed: %', v_target_schema || '.customer', SQLERRM;
+                RAISE;
+            END;
         END;
 
-        IF v_new_id IS NULL THEN
-            EXECUTE format('INSERT INTO %I.customer (customer_name, rowguid, ModifiedDate) VALUES ($1,$2,$3) RETURNING customer_id', v_target_schema)
-            USING rec.customer_name, gen_random_uuid(), NOW() INTO v_new_id;
-            v_customers := v_customers + 1;
-        END IF;
-
-        INSERT INTO tmp_customer_map(orig_customer_id, new_customer_id) VALUES (rec.customer_id, v_new_id);
+        INSERT INTO tmp_customer_map(orig_customer_key, orig_customer_id, new_customer_id) VALUES (rec.customer_key, rec.customer_id, v_new_id);
     END LOOP;
 
-    -- Insert categories
     FOR rec IN
-      SELECT DISTINCT dcat.category_id, dcat.category_name
+      SELECT DISTINCT dp.product_key, dp.product_id, dp.product_name, dp.list_price
+      FROM dwh.dim_product dp
+      JOIN dwh.fact_sale_item f ON f.product_key = dp.product_key
+      JOIN dwh.dim_date dd ON f.date_key = dd.date_key
+      WHERE dp.branch_key = v_branch_key
+        AND dd.full_date BETWEEN p_start_date AND p_end_date
+    LOOP
+        v_new_id := NULL;
+        -- Try to insert with explicit product_id from source
+        BEGIN
+            EXECUTE format(
+              'INSERT INTO %I.product (product_id, product_name, list_price, rowguid, modifieddate) VALUES ($1,$2,$3,$4,$5) RETURNING product_id',
+              v_target_schema
+            )
+            USING rec.product_id, rec.product_name, rec.list_price, gen_random_uuid(), NOW()
+            INTO v_new_id;
+            v_products := v_products + 1;
+        EXCEPTION WHEN OTHERS THEN
+            -- If explicit ID fails, try without it (let database generate)
+            BEGIN
+                EXECUTE format(
+                  'INSERT INTO %I.product (product_name, list_price, rowguid, modifieddate) VALUES ($1,$2,$3,$4) RETURNING product_id',
+                  v_target_schema
+                )
+                USING rec.product_name, rec.list_price, gen_random_uuid(), NOW()
+                INTO v_new_id;
+                v_products := v_products + 1;
+            EXCEPTION WHEN OTHERS THEN
+                RAISE NOTICE 'Product insert into % failed: %', v_target_schema || '.product', SQLERRM;
+                RAISE;
+            END;
+        END;
+
+        INSERT INTO tmp_product_map(orig_product_key, orig_product_id, new_product_id) VALUES (rec.product_key, rec.product_id, v_new_id);
+    END LOOP;
+
+    -- Insert categories (map by category_key and preserve source ids when available)
+    FOR rec IN
+      SELECT DISTINCT dcat.category_key, dcat.category_id, dcat.category_name
       FROM dwh.dim_category dcat
       JOIN dwh.bridge_product_category bc ON bc.category_key = dcat.category_key
       JOIN dwh.dim_product dp ON dp.product_key = bc.product_key
@@ -135,53 +184,49 @@ BEGIN
         END;
 
         IF v_new_id IS NULL THEN
-            EXECUTE format('INSERT INTO %I.category (category_name, rowguid, ModifiedDate) VALUES ($1,$2,$3) RETURNING category_id', v_target_schema)
-            USING rec.category_name, gen_random_uuid(), NOW() INTO v_new_id;
-            v_categories := v_categories + 1;
+            -- Try to insert with explicit category_id from source
+            BEGIN
+                EXECUTE format(
+                  'INSERT INTO %I.category (category_id, category_name, rowguid, modifieddate) VALUES ($1,$2,$3,$4) RETURNING category_id',
+                  v_target_schema
+                )
+                USING rec.category_id, rec.category_name, gen_random_uuid(), NOW()
+                INTO v_new_id;
+                v_categories := v_categories + 1;
+            EXCEPTION WHEN OTHERS THEN
+                -- If explicit ID fails, try without it (let database generate)
+                BEGIN
+                    EXECUTE format(
+                      'INSERT INTO %I.category (category_name, rowguid, modifieddate) VALUES ($1,$2,$3) RETURNING category_id',
+                      v_target_schema
+                    )
+                    USING rec.category_name, gen_random_uuid(), NOW()
+                    INTO v_new_id;
+                    v_categories := v_categories + 1;
+                EXCEPTION WHEN OTHERS THEN
+                    RAISE NOTICE 'Category insert into % failed: %', v_target_schema || '.category', SQLERRM;
+                    RAISE;
+                END;
+            END;
         END IF;
 
-        INSERT INTO tmp_category_map(orig_category_id, new_category_id) VALUES (rec.category_id, v_new_id);
+        INSERT INTO tmp_category_map(orig_category_key, orig_category_id, new_category_id) VALUES (rec.category_key, rec.category_id, v_new_id);
     END LOOP;
 
-    -- Insert products
+
+    -- Insert product_category relationships (lookup by source keys)
     FOR rec IN
-      SELECT DISTINCT dp.product_id, dp.product_name, dp.list_price
-      FROM dwh.dim_product dp
-      JOIN dwh.fact_sale_item f ON f.product_key = dp.product_key
-      JOIN dwh.dim_date dd ON f.date_key = dd.date_key
-      WHERE dp.branch_key = v_branch_key
-        AND dd.full_date BETWEEN p_start_date AND p_end_date
-    LOOP
-        v_new_id := NULL;
-        BEGIN
-            EXECUTE format('SELECT product_id FROM %I.product WHERE product_name = $1 AND list_price = $2 LIMIT 1', v_target_schema)
-            USING rec.product_name, rec.list_price INTO v_new_id;
-        EXCEPTION WHEN OTHERS THEN
-            v_new_id := NULL;
-        END;
-
-        IF v_new_id IS NULL THEN
-            EXECUTE format('INSERT INTO %I.product (product_name, list_price, rowguid, ModifiedDate) VALUES ($1,$2,$3,$4) RETURNING product_id', v_target_schema)
-            USING rec.product_name, rec.list_price, gen_random_uuid(), NOW() INTO v_new_id;
-            v_products := v_products + 1;
-        END IF;
-
-        INSERT INTO tmp_product_map(orig_product_id, new_product_id) VALUES (rec.product_id, v_new_id);
-    END LOOP;
-
-    -- Insert product_category relationships
-    FOR rec IN
-      SELECT DISTINCT dp.product_id AS orig_product_id, dcat.category_id AS orig_category_id
+      SELECT DISTINCT dp.product_key AS orig_product_key, dcat.category_key AS orig_category_key
       FROM dwh.bridge_product_category bc
       JOIN dwh.dim_product dp ON bc.product_key = dp.product_key
       JOIN dwh.dim_category dcat ON bc.category_key = dcat.category_key
       WHERE dp.branch_key = v_branch_key AND dcat.branch_key = v_branch_key
     LOOP
-        SELECT new_product_id INTO v_new_prod FROM tmp_product_map WHERE orig_product_id = rec.orig_product_id LIMIT 1;
-        SELECT new_category_id INTO v_new_id FROM tmp_category_map WHERE orig_category_id = rec.orig_category_id LIMIT 1;
+        SELECT new_product_id INTO v_new_prod FROM tmp_product_map WHERE orig_product_key = rec.orig_product_key LIMIT 1;
+        SELECT new_category_id INTO v_new_id FROM tmp_category_map WHERE orig_category_key = rec.orig_category_key LIMIT 1;
         IF v_new_prod IS NOT NULL AND v_new_id IS NOT NULL THEN
             BEGIN
-                EXECUTE format('INSERT INTO %I.product_category (product_id, category_id, rowguid, ModifiedDate) VALUES ($1,$2,$3,$4)', v_target_schema)
+                EXECUTE format('INSERT INTO %I.product_category (product_id, category_id, rowguid, modifieddate) VALUES ($1,$2,$3,$4)', v_target_schema)
                 USING v_new_prod, v_new_id, gen_random_uuid(), NOW();
             EXCEPTION WHEN unique_violation THEN
                 NULL;
@@ -189,30 +234,53 @@ BEGIN
         END IF;
     END LOOP;
 
-    -- Insert sales (headers) and build sale mapping
+    -- Insert sales (headers) and build sale mapping; match customer by orig id OR key
     FOR rec IN
-      SELECT f.sale_id AS orig_sale_id, dd.full_date AS sale_date, dc.customer_id AS orig_customer_id, SUM(f.line_amount) AS total_amount
+      SELECT f.sale_id AS orig_sale_id, dd.full_date AS sale_date, dc.customer_key AS orig_customer_key, dc.customer_id AS orig_customer_id, SUM(f.line_amount) AS total_amount
       FROM dwh.fact_sale_item f
       JOIN dwh.dim_date dd ON f.date_key = dd.date_key
       JOIN dwh.dim_customer dc ON f.customer_key = dc.customer_key
       WHERE f.branch_key = v_branch_key
         AND dd.full_date BETWEEN p_start_date AND p_end_date
-      GROUP BY f.sale_id, dd.full_date, dc.customer_id
+      GROUP BY f.sale_id, dd.full_date, dc.customer_key, dc.customer_id
       ORDER BY dd.full_date, f.sale_id
     LOOP
-        SELECT new_customer_id INTO v_new_cust FROM tmp_customer_map WHERE orig_customer_id = rec.orig_customer_id LIMIT 1;
+        SELECT new_customer_id INTO v_new_cust FROM tmp_customer_map WHERE (orig_customer_id = rec.orig_customer_id) OR (orig_customer_key = rec.orig_customer_key) LIMIT 1;
         IF v_new_cust IS NULL THEN
-            RAISE EXCEPTION 'Customer mapping missing for source customer %', rec.orig_customer_id;
+            RAISE EXCEPTION 'Customer mapping missing for source customer (id=% , key=%)', rec.orig_customer_id, rec.orig_customer_key;
         END IF;
 
-        EXECUTE format('INSERT INTO %I.sale (customer_id, sale_date, total_amount, rowguid, ModifiedDate) VALUES ($1,$2,$3,$4,$5) RETURNING sale_id', v_target_schema)
-        USING v_new_cust, rec.sale_date, rec.total_amount, gen_random_uuid(), NOW() INTO v_new_sale;
-        v_sales := v_sales + 1;
+        -- Try to insert with explicit sale_id first (let FDW handle it)
+        v_new_sale := NULL;
+        BEGIN
+            EXECUTE format('INSERT INTO %I.sale (sale_id, customer_id, sale_date, total_amount, rowguid, modifieddate) VALUES ($1,$2,$3,$4,$5,$6)', v_target_schema)
+            USING rec.orig_sale_id, v_new_cust, rec.sale_date, rec.total_amount, gen_random_uuid(), NOW();
+            v_new_sale := rec.orig_sale_id;
+            v_sales := v_sales + 1;
+        EXCEPTION WHEN OTHERS THEN
+            -- If explicit ID fails, insert without ID and query it back
+            BEGIN
+                EXECUTE format('INSERT INTO %I.sale (customer_id, sale_date, total_amount, rowguid, modifieddate) VALUES ($1,$2,$3,$4,$5)', v_target_schema)
+                USING v_new_cust, rec.sale_date, rec.total_amount, gen_random_uuid(), NOW();
+
+                -- Query back the most recent sale_id for this customer/date/amount combination
+                EXECUTE format('SELECT sale_id FROM %I.sale WHERE customer_id = $1 AND sale_date = $2 AND total_amount = $3 ORDER BY sale_id DESC LIMIT 1', v_target_schema)
+                USING v_new_cust, rec.sale_date, rec.total_amount INTO v_new_sale;
+
+                IF v_new_sale IS NULL THEN
+                    RAISE EXCEPTION 'Failed to retrieve inserted sale_id for customer % on date %', v_new_cust, rec.sale_date;
+                END IF;
+                v_sales := v_sales + 1;
+            EXCEPTION WHEN OTHERS THEN
+                RAISE NOTICE 'Sale insert into % failed: %', v_target_schema || '.sale', SQLERRM;
+                RAISE;
+            END;
+        END;
 
         INSERT INTO tmp_sale_map(orig_sale_id, new_sale_id) VALUES (rec.orig_sale_id, v_new_sale);
     END LOOP;
 
-    -- Insert sale items
+    -- Insert sale items (lookup product mapping by source product_key)
     FOR rec IN
       SELECT f.sale_item_id AS orig_sale_item_id, f.sale_id AS orig_sale_id, f.product_key AS prod_key, f.quantity, f.unit_price, f.line_amount
       FROM dwh.fact_sale_item f
@@ -221,14 +289,10 @@ BEGIN
         AND dd.full_date BETWEEN p_start_date AND p_end_date
       ORDER BY f.sale_id, f.sale_item_id
     LOOP
-        -- map product_key to product_id then to new_product_id
-        SELECT dp.product_id INTO v_new_id FROM dwh.dim_product dp WHERE dp.product_key = rec.prod_key LIMIT 1;
-        IF v_new_id IS NULL THEN
-            RAISE EXCEPTION 'Missing dim_product for product_key %', rec.prod_key;
-        END IF;
-        SELECT new_product_id INTO v_new_prod FROM tmp_product_map WHERE orig_product_id = v_new_id LIMIT 1;
+        -- lookup new product id by source product_key
+        SELECT new_product_id INTO v_new_prod FROM tmp_product_map WHERE orig_product_key = rec.prod_key LIMIT 1;
         IF v_new_prod IS NULL THEN
-            RAISE EXCEPTION 'Product mapping missing for source product %', v_new_id;
+            RAISE EXCEPTION 'Product mapping missing for source product_key %', rec.prod_key;
         END IF;
 
         -- map sale
@@ -237,9 +301,22 @@ BEGIN
             RAISE EXCEPTION 'Sale mapping missing for source sale %', rec.orig_sale_id;
         END IF;
 
-        EXECUTE format('INSERT INTO %I.sale_item (sale_id, product_id, quantity, unit_price, line_amount, rowguid, ModifiedDate) VALUES ($1,$2,$3,$4,$5,$6,$7)', v_target_schema)
-        USING v_new_sale, v_new_prod, rec.quantity, rec.unit_price, rec.line_amount, gen_random_uuid(), NOW();
-        v_sale_items := v_sale_items + 1;
+        -- Try to insert with explicit sale_item_id first
+        BEGIN
+            EXECUTE format('INSERT INTO %I.sale_item (sale_item_id, sale_id, product_id, quantity, unit_price, line_amount, rowguid, modifieddate) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', v_target_schema)
+            USING rec.orig_sale_item_id, v_new_sale, v_new_prod, rec.quantity, rec.unit_price, rec.line_amount, gen_random_uuid(), NOW();
+            v_sale_items := v_sale_items + 1;
+        EXCEPTION WHEN OTHERS THEN
+            -- If explicit ID fails, try without it (let database generate)
+            BEGIN
+                EXECUTE format('INSERT INTO %I.sale_item (sale_id, product_id, quantity, unit_price, line_amount, rowguid, modifieddate) VALUES ($1,$2,$3,$4,$5,$6,$7)', v_target_schema)
+                USING v_new_sale, v_new_prod, rec.quantity, rec.unit_price, rec.line_amount, gen_random_uuid(), NOW();
+                v_sale_items := v_sale_items + 1;
+            EXCEPTION WHEN OTHERS THEN
+                RAISE NOTICE 'Sale_item insert into % failed: %', v_target_schema || '.sale_item', SQLERRM;
+                RAISE;
+            END;
+        END;
     END LOOP;
 
     -- Log results

@@ -287,7 +287,7 @@ RETURNING customer_id;
 ```powershell
 docker compose exec -T db psql -U postgres -d branch_west -c "
 INSERT INTO product (product_name, list_price)
-VALUES ('Demo Product 777', 777) 
+VALUES ('Demo Product 777', 777)
 RETURNING product_id;
 "
 ```

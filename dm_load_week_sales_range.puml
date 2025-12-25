@@ -1,0 +1,47 @@
+@startuml
+
+entity "dwh.dim_date" as dwh_date {
+    + date_key: INT <<PK>>
+    + full_date: DATE
+    + iso_year: INT
+    + iso_week: INT
+}
+
+entity "dwh.fact_sale_item" as dwh_fsi {
+    + sale_item_key: BIGINT <<PK>>
+    + sale_id: BIGINT
+    + customer_key: BIGINT
+    + branch_key: BIGINT
+    + date_key: INT <<FK>>
+    + quantity: NUMERIC(16,3)
+    + line_amount: NUMERIC(14,2)
+}
+
+entity "dm.dim_week" as dm_week {
+    + week_key: BIGSERIAL <<PK>>
+    + iso_year: INT
+    + iso_week: INT
+    + week_start_date: DATE
+    + week_end_date: DATE
+    + (iso_year, iso_week): UNIQUE
+}
+
+entity "dm.fact_week_sales" as dm_fws {
+    + week_key: BIGINT <<FK>>
+    + branch_key: BIGINT
+    + revenue_total: NUMERIC(14,2)
+    + items_qty_total: NUMERIC(16,3)
+    + orders_count: BIGINT
+    + customers_count: BIGINT
+    + avg_check: NUMERIC(14,2)
+    + avg_items_per_order: NUMERIC(16,3)
+    + (week_key, branch_key): <<PK>>
+}
+
+dwh_date ||--o{ dwh_fsi : "date_key"
+dm_week  ||--o{ dm_fws : "week_key"
+
+' логическая связь (не FK): неделя определяется по full_date -> (iso_year, iso_week)
+dwh_date ..> dm_week : "map by ISOYEAR/ISOWEEK"
+
+@enduml

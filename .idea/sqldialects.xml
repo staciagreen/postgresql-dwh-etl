@@ -3,6 +3,7 @@
   <component name="SqlDialectMappings">
     <file url="file://$PROJECT_DIR$/sql/20_dwh_schema.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/sql/40_dwh_incremental_load.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/sql/60_restore_branch_from_dwh_v2.sql" dialect="PostgreSQL" />
     <file url="PROJECT" dialect="PostgreSQL" />
   </component>
 </project>
