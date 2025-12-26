@@ -72,7 +72,7 @@ JOIN dwh.dim_customer dc ON dc.branch_key = br.branch_key AND dc.customer_id = s
 JOIN dwh.dim_product  dp ON dp.branch_key = br.branch_key AND dp.product_id = si.product_id
 UNION ALL
 SELECT br.branch_key, dd.date_key, dc.customer_key, dp.product_key,
-       s.sale_id, si.sale_item_id, si.quantity, si.unit_price, si.line_amount, dp.list_price   -- ← добавили
+       s.sale_id, si.sale_item_id, si.quantity, si.unit_price, si.line_amount, dp.list_price 
 FROM src_east.sale_item si
 JOIN src_east.sale s   ON s.sale_id = si.sale_id
 JOIN dwh.dim_branch br ON br.branch_code = 'east'

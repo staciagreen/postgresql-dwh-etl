@@ -31,10 +31,6 @@
 </table>
 
 <br/><br/><br/>
-
-**Санкт-Петербург**  
-2025
-
 </div>
 
 <div style="page-break-after: always;"></div>
@@ -77,9 +73,6 @@
 В репозитории реализованы две утилиты:
 
 - `sql/60_restore_branch_from_dwh.sql` — процедура `restore_branch_from_dwh(p_branch_code text, p_start_date date, p_end_date date, p_force boolean default false)` в схеме `dwh`. Процедура создаёт временные таблицы mapping, вставляет справочники/продукты/категории/шапки/строки и логирует результаты в `dwh.restore_log`.
-
-- `scripts/restore_branch_from_dwh_cli.sh` — bash-скрипт, который читает данные из DWH (psql) и выполняет вставки в базу филиала `branch_<branch>` через psql. Скрипт устойчив к кавычкам, тримит значения и пишет подробный лог в `/tmp/restore_branch_<branch>_<start>_<end>.log`.
-
 Ниже приведён пример вызова процедуры и ключевые фрагменты логики (сокращённо).
 
 Пример вызова процедуры (psql):

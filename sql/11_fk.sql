@@ -17,3 +17,5 @@ ALTER TABLE IF EXISTS sale_item
 ALTER TABLE IF EXISTS sale_item
   ADD CONSTRAINT fk_sale_item_product
   FOREIGN KEY (product_id) REFERENCES product(product_id);
+
+

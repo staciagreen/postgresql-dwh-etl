@@ -21,3 +21,4 @@ IMPORT FOREIGN SCHEMA public LIMIT TO (customer, product, category, product_cate
 
 IMPORT FOREIGN SCHEMA public LIMIT TO (customer, product, category, product_category, sale, sale_item)
   FROM SERVER srv_east INTO src_east;
+

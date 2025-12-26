@@ -4,34 +4,27 @@ from datetime import date, timedelta
 import psycopg2
 from faker import Faker
 
-# Параметры подключения к PostgreSQL из переменных окружения (с дефолтами)
 PGHOST = os.getenv("PGHOST", "localhost")
 PGPORT = int(os.getenv("PGPORT", "5432"))
 PGUSER = os.getenv("PGUSER", "postgres")
 PGPASSWORD = os.getenv("PGPASSWORD", "stacia")
-# Можно сидировать сразу несколько БД через переменную DBS (разделитель запятая)
 DBS = [db.strip() for db in os.getenv("DBS", "branch_west").split(",")]
 
-# Генератор фейковых данных и фиксированный seed для воспроизводимости
 fake = Faker("ru_RU")
 random.seed(42)
 
-# Набор категорий для справочника category
 CATEGORIES = [
     "Бытовая техника", "Электроника", "Одежда",
     "Спорттовары", "Книги", "Игрушки"
 ]
 
-# Утилита подключения к конкретной БД
 def connect(dbname):
     return psycopg2.connect(
         host=PGHOST, port=PGPORT, user=PGUSER, password=PGPASSWORD, dbname=dbname
     )
 
-# Основная функция сидирования одной БД
 def seed_db(dbname):
     conn = connect(dbname)
-    # Автокоммит удобен для простого сидера, чтобы не держать большую транзакцию
     conn.autocommit = True
     cur = conn.cursor()
 
@@ -49,7 +42,6 @@ def seed_db(dbname):
         )
         customers.append(cur.fetchone()[0])
 
-    # Вставка категорий (category) с защитой от дублей по уникальному имени
     categories = []
     for name in CATEGORIES:
         cur.execute(
@@ -63,7 +55,7 @@ def seed_db(dbname):
             row = cur.fetchone()
         categories.append(row[0])
 
-    # Вставка товаров (product) с рандомной ценой
+    # Вставка товаров с рандомной ценой
     products = []
     for i in range(30):
         pname = f"{fake.word().capitalize()} {fake.color_name()}"
@@ -74,7 +66,7 @@ def seed_db(dbname):
         )
         products.append(cur.fetchone()[0])
 
-    # Заполнение связей товар категория без дублей (product_category)
+    # Заполнение связей товар категория
     pairs = set()
     while len(pairs) < 60:
         pairs.add((random.choice(products), random.choice(categories)))
@@ -84,7 +76,7 @@ def seed_db(dbname):
             (p, c)
         )
 
-    # Вставка шапок продаж (sale) с нулевой суммой, которую пересчитаем ниже
+    # Вставка шапок продажс нулевой суммой, которую пересчитаем ниже
     sales = []
     for _ in range(50):
         cust = random.choice(customers)
@@ -95,7 +87,7 @@ def seed_db(dbname):
         )
         sales.append(cur.fetchone()[0])
 
-    # Вставка строк продаж (sale_item) и пересчет total_amount в sale
+    # Вставка строк продаж и пересчет total_amount в sale
     for s in sales:
         n_items = random.randint(1, 5)
         total = 0
@@ -119,15 +111,15 @@ def seed_db(dbname):
         # Финальный апдейт суммы по шапке
         cur.execute("UPDATE sale SET total_amount=%s WHERE sale_id=%s;", (round(total, 2), s))
 
-    # Закрываем курсор и соединение
     cur.close()
     conn.close()
     print(f"[OK] Seeded {dbname}")
 
-# Точка входа: сидируем все БД, перечисленные в DBS
 def main():
     for db in DBS:
         seed_db(db)
 
 if __name__ == "__main__":
     main()
+
+
