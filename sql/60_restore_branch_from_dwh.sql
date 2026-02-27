@@ -110,7 +110,8 @@ BEGIN
             END;
         END;
 
-        INSERT INTO tmp_customer_map(orig_customer_key, orig_customer_id, new_customer_id) VALUES (rec.customer_key, rec.customer_id, v_new_id);
+        INSERT INTO tmp_customer_map(orig_customer_key, orig_customer_id, new_customer_id) VALUES (rec.customer_key, rec.customer_id,
+                                                                                                   v_new_id);
     END LOOP;
 
     FOR rec IN
@@ -145,7 +146,8 @@ BEGIN
             END;
         END;
 
-        INSERT INTO tmp_product_map(orig_product_key, orig_product_id, new_product_id) VALUES (rec.product_key, rec.product_id, v_new_id);
+        INSERT INTO tmp_product_map(orig_product_key, orig_product_id, new_product_id) VALUES (rec.product_key, rec.product_id,
+                                                                                               v_new_id);
     END LOOP;
 
     FOR rec IN
@@ -188,7 +190,8 @@ BEGIN
             END;
         END IF;
 
-        INSERT INTO tmp_category_map(orig_category_key, orig_category_id, new_category_id) VALUES (rec.category_key, rec.category_id, v_new_id);
+        INSERT INTO tmp_category_map(orig_category_key, orig_category_id, new_category_id) VALUES (rec.category_key, rec.category_id,
+                                                                                                   v_new_id);
     END LOOP;
 
 
@@ -212,7 +215,8 @@ BEGIN
     END LOOP;
 
     FOR rec IN
-      SELECT f.sale_id AS orig_sale_id, dd.full_date AS sale_date, dc.customer_key AS orig_customer_key, dc.customer_id AS orig_customer_id, SUM(f.line_amount) AS total_amount
+      SELECT f.sale_id AS orig_sale_id, dd.full_date AS sale_date, dc.customer_key AS orig_customer_key, dc.customer_id AS orig_customer_id, SUM(f.line_amount)
+          AS total_amount
       FROM dwh.fact_sale_item f
       JOIN dwh.dim_date dd ON f.date_key = dd.date_key
       JOIN dwh.dim_customer dc ON f.customer_key = dc.customer_key
@@ -221,7 +225,8 @@ BEGIN
       GROUP BY f.sale_id, dd.full_date, dc.customer_key, dc.customer_id
       ORDER BY dd.full_date, f.sale_id
     LOOP
-        SELECT new_customer_id INTO v_new_cust FROM tmp_customer_map WHERE (orig_customer_id = rec.orig_customer_id) OR (orig_customer_key = rec.orig_customer_key) LIMIT 1;
+        SELECT new_customer_id INTO v_new_cust FROM tmp_customer_map WHERE (orig_customer_id = rec.orig_customer_id) OR (orig_customer_key = rec.orig_customer_key)
+                                                                     LIMIT 1;
         IF v_new_cust IS NULL THEN
             RAISE EXCEPTION 'Customer mapping missing for source customer (id=% , key=%)', rec.orig_customer_id, rec.orig_customer_key;
         END IF;
@@ -237,7 +242,8 @@ BEGIN
                 EXECUTE format('INSERT INTO %I.sale (customer_id, sale_date, total_amount, rowguid, modifieddate) VALUES ($1,$2,$3,$4,$5)', v_target_schema)
                 USING v_new_cust, rec.sale_date, rec.total_amount, gen_random_uuid(), NOW();
 
-                EXECUTE format('SELECT sale_id FROM %I.sale WHERE customer_id = $1 AND sale_date = $2 AND total_amount = $3 ORDER BY sale_id DESC LIMIT 1', v_target_schema)
+                EXECUTE format('SELECT sale_id FROM %I.sale WHERE customer_id = $1 AND sale_date = $2 AND total_amount = $3 ORDER BY sale_id DESC LIMIT 1',
+                               v_target_schema)
                 USING v_new_cust, rec.sale_date, rec.total_amount INTO v_new_sale;
 
                 IF v_new_sale IS NULL THEN
@@ -272,12 +278,14 @@ BEGIN
         END IF;
 
         BEGIN
-            EXECUTE format('INSERT INTO %I.sale_item (sale_item_id, sale_id, product_id, quantity, unit_price, line_amount, rowguid, modifieddate) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', v_target_schema)
+            EXECUTE format('INSERT INTO %I.sale_item (sale_item_id, sale_id, product_id, quantity, unit_price, line_amount, rowguid, modifieddate) ' ||
+                           'VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', v_target_schema)
             USING rec.orig_sale_item_id, v_new_sale, v_new_prod, rec.quantity, rec.unit_price, rec.line_amount, gen_random_uuid(), NOW();
             v_sale_items := v_sale_items + 1;
         EXCEPTION WHEN OTHERS THEN
             BEGIN
-                EXECUTE format('INSERT INTO %I.sale_item (sale_id, product_id, quantity, unit_price, line_amount, rowguid, modifieddate) VALUES ($1,$2,$3,$4,$5,$6,$7)', v_target_schema)
+                EXECUTE format('INSERT INTO %I.sale_item (sale_id, product_id, quantity, unit_price, line_amount, rowguid, modifieddate) ' ||
+                               'VALUES ($1,$2,$3,$4,$5,$6,$7)', v_target_schema)
                 USING v_new_sale, v_new_prod, rec.quantity, rec.unit_price, rec.line_amount, gen_random_uuid(), NOW();
                 v_sale_items := v_sale_items + 1;
             EXCEPTION WHEN OTHERS THEN
@@ -288,10 +296,12 @@ BEGIN
     END LOOP;
 
     INSERT INTO dwh.restore_log(branch_code, start_date, end_date, customers_inserted, products_inserted, categories_inserted, sales_inserted, sale_items_inserted)
-    VALUES (p_branch_code, p_start_date, p_end_date, v_customers, v_products, v_categories, v_sales, v_sale_items);
+    VALUES (p_branch_code, p_start_date, p_end_date, v_customers, v_products,
+            v_categories, v_sales, v_sale_items);
 
     RAISE NOTICE 'Restore completed for branch % between % and % (target schema: %). Inserted: customers=% products=% categories=% sales=% sale_items=%',
         p_branch_code, p_start_date, p_end_date, v_target_schema, v_customers, v_products, v_categories, v_sales, v_sale_items;
 
 END;
 $$;
+
