@@ -38,31 +38,27 @@ entity "dwh.dim_category" as cat {
 }
 
 entity "dwh.bridge_product_category" as bpc {
-  *product_key  : BIGINT
+  *product_key : BIGINT
   *category_key : BIGINT
 }
 
-
-' Позиция чека
 entity "dwh.fact_sale_item" as si {
-  +fact_key     : SERIAL
-  +sale_key   : SERIAL
-  sale_key      : BIGINT
-  product_key   : BIGINT
-  sale_item_id  : BIGINT
-  branch_key  : BIGINT
-  date_key    : BIGINT
-  customer_key: BIGINT
-  sale_id     : BIGINT
-  quantity      : NUMERIC(12,3) > 0
-  unit_price    : NUMERIC(12,2) >= 0
-  list_price : NUMERIC(12,2) >= 0
-  line_amount   : NUMERIC(14,2) >= 0
+  +fact_key : SERIAL
+  sale_key : BIGINT
+  product_key : BIGINT
+  sale_item_id : BIGINT
+  branch_key : BIGINT
+  date_key : BIGINT
+  customer_key : BIGINT
+  sale_id : BIGINT
+  quantity : NUMERIC(12,3)
+  unit_price : NUMERIC(12,2)
+  list_price : NUMERIC(12,2)
+  line_amount : NUMERIC(14,2)
 }
 
-
-p  ||--o{ bpc
-cat||--o{ bpc
+p   ||--o{ bpc
+cat ||--o{ bpc
 
 br ||--o{ si
 d  ||--o{ si
